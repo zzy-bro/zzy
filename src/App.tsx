@@ -31,10 +31,72 @@ type Attraction = {
   type?: '山脉' | '河流' | '湖泊' | '湿地' // 自然地理类型
 }
 
-// 生成导航链接（高德地图搜索）
+// 生成导航链接（高德地图搜索）- 只使用景点名字
 const buildNavUrl = (a: Attraction) => {
-  const keyword = `${a.name} ${a.city}${a.county ? ' ' + a.county : ''}`
+  // 只使用景点名字，不包含城市和县名
+  const keyword = a.name
   return `https://uri.amap.com/search?keyword=${encodeURIComponent(keyword)}`
+}
+
+// 高德地图 app scheme
+const buildAmapAppUrl = (a: Attraction) => {
+  const keyword = a.name
+  // 检测设备类型
+  const userAgent = navigator.userAgent.toLowerCase()
+  if (/iphone|ipad|ipod/.test(userAgent)) {
+    // iOS
+    return `iosamap://search?keyword=${encodeURIComponent(keyword)}`
+  } else if (/android/.test(userAgent)) {
+    // Android
+    return `androidamap://search?keyword=${encodeURIComponent(keyword)}`
+  }
+  // 默认返回网页链接
+  return buildNavUrl(a)
+}
+
+// 处理导航点击，优先打开高德 app，如果没有则打开网页
+const handleNavigation = (e: React.MouseEvent, attraction: Attraction) => {
+  e.preventDefault()
+  
+  const appUrl = buildAmapAppUrl(attraction)
+  const webUrl = buildNavUrl(attraction)
+  
+  // 尝试打开 app
+  if (appUrl.startsWith('iosamap://') || appUrl.startsWith('androidamap://')) {
+    let appOpened = false
+    
+    // 监听页面失去焦点事件（说明 app 可能打开了）
+    const handleBlur = () => {
+      appOpened = true
+      window.removeEventListener('blur', handleBlur)
+    }
+    window.addEventListener('blur', handleBlur)
+    
+    // 尝试打开 app
+    try {
+      // 使用 location.href 尝试打开 app（iOS）
+      if (appUrl.startsWith('iosamap://')) {
+        window.location.href = appUrl
+      } else {
+        // Android 使用 window.open
+        window.open(appUrl, '_self')
+      }
+    } catch (err) {
+      console.error('打开高德地图 app 失败:', err)
+    }
+    
+    // 设置超时，如果 app 没有打开（页面没有失去焦点），则打开网页
+    setTimeout(() => {
+      window.removeEventListener('blur', handleBlur)
+      if (!appOpened) {
+        // 如果 app 没有打开，打开网页版
+        window.open(webUrl, '_blank')
+      }
+    }, 1500)
+  } else {
+    // 直接打开网页
+    window.open(webUrl, '_blank')
+  }
 }
 
 const attractions: Attraction[] = [
@@ -2152,14 +2214,13 @@ const App = () => {
                     <div className="attraction-location">
                       {attraction.city} · {attraction.county}
                     </div>
-                    <a
+                    <button
                       className="attraction-nav"
-                      href={buildNavUrl(attraction)}
-                      target="_blank"
-                      rel="noreferrer"
+                      onClick={(e) => handleNavigation(e, attraction)}
+                      type="button"
                     >
                       导航
-                    </a>
+                    </button>
                   </div>
                   </div>
                 ))

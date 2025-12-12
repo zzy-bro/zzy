@@ -312,6 +312,77 @@ const App = () => {
   const [viewLevel, setViewLevel] = useState<'province' | 'city'>('province') // 视图级别
   const [selectedCounty, setSelectedCounty] = useState<string | null>(null)
   const [attractionFilter, setAttractionFilter] = useState<'all' | '5A' | '4A' | '山脉' | '河流'>('all')
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  
+  // 全屏功能
+  const toggleFullscreen = async () => {
+    try {
+      const isCurrentlyFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      )
+
+      if (!isCurrentlyFullscreen) {
+        // 进入全屏
+        const element = document.documentElement
+        if (element.requestFullscreen) {
+          await element.requestFullscreen()
+        } else if ((element as any).webkitRequestFullscreen) {
+          // Safari
+          await (element as any).webkitRequestFullscreen()
+        } else if ((element as any).mozRequestFullScreen) {
+          // Firefox
+          await (element as any).mozRequestFullScreen()
+        } else if ((element as any).msRequestFullscreen) {
+          // IE/Edge
+          await (element as any).msRequestFullscreen()
+        }
+      } else {
+        // 退出全屏
+        if (document.exitFullscreen) {
+          await document.exitFullscreen()
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen()
+        } else if ((document as any).mozCancelFullScreen) {
+          await (document as any).mozCancelFullScreen()
+        } else if ((document as any).msExitFullscreen) {
+          await (document as any).msExitFullscreen()
+        }
+      }
+    } catch (err) {
+      console.error('全屏操作失败:', err)
+    }
+  }
+
+  // 监听全屏状态变化
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isFull = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      )
+      setIsFullscreen(isFull)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange)
+    document.addEventListener('msfullscreenchange', handleFullscreenChange)
+
+    // 初始化检查全屏状态
+    handleFullscreenChange()
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('msfullscreenchange', handleFullscreenChange)
+    }
+  }, [])
   
   // 同步 ref 和 state
   const updateViewLevel = (level: 'province' | 'city') => {
@@ -593,6 +664,8 @@ const App = () => {
         const mat = sprite.material as THREE.SpriteMaterial
         mat.opacity = 0 // 初始透明度为0
         sprite.position.set(position.x, position.y, position.z + (isHighlighted ? 40 : 20))
+        // 在 sprite 上存储对应的 mesh 引用，方便点击时查找
+        sprite.userData.mesh = mesh
         scene.add(sprite)
         labelSprites.set(mesh, sprite)
         // 添加到标签动画列表
@@ -1254,7 +1327,11 @@ const App = () => {
         countyMeshes.length = 0
 
         // 先更新视图级别为city，这样addPolygon会将县级mesh添加到clickables
+        // 注意：必须在加载县级数据之前更新视图级别
         updateViewLevel('city')
+        
+        // 清空 clickables，确保只包含县级 mesh
+        clickables.length = 0
 
         // 加载县级地图
         const points = collectPoints(countyFeatures)
@@ -1331,9 +1408,20 @@ const App = () => {
 
     // 返回省级视图
     const returnToProvince = () => {
-      // 显示省级地图
+      // 清空 clickables，准备重新添加市级 mesh
+      clickables.length = 0
+      
+      // 更新视图级别为省级
+      updateViewLevel('province')
+      
+      // 显示省级地图，并重新添加到 clickables（只添加市级）
       cityMeshes.forEach((mesh) => {
         mesh.visible = true
+        // 只添加市级 mesh 到 clickables
+        const name = mesh.userData.name as string | undefined
+        if (isCityLevel(name)) {
+          clickables.push(mesh)
+        }
       })
 
       // 清除县级地图及其标签，并从clickables中移除
@@ -1398,7 +1486,6 @@ const App = () => {
       const targetLookAt = new THREE.Vector3(0, 0, 0)
       animateCamera(targetPos, targetLookAt)
 
-      updateViewLevel('province')
       setSelectedCity(null)
       setSelectedCounty(null)
       setStatus('已返回省级视图')
@@ -1415,10 +1502,13 @@ const App = () => {
 
       // 县级视图：允许点击县/区进行高亮，但不允许点击市级
       if (viewLevelRef.current === 'city') {
-        // 仅阻止真正的市级 mesh；防止像“定州市”“迁安市”这类县级市被误判
-        if (isCityLevel(name) && !countyMeshes.includes(mesh)) return
+        // 确保只有县级 mesh 可以被点击
+        if (!countyMeshes.includes(mesh)) {
+          console.log('县级视图：阻止点击非县级区域', name)
+          return
+        }
 
-        // 仅对当前县级mesh进行高亮，先移除其他县级高亮（不影响已隐藏的市级选择）
+        // 仅对当前县级mesh进行高亮，先移除其他县级高亮
         selectedMeshes.forEach((prevMesh) => {
           if (countyMeshes.includes(prevMesh)) {
             restoreMesh(prevMesh)
@@ -1443,9 +1533,27 @@ const App = () => {
           return
         }
 
+        // 添加脉冲动画
+        const baseZ = mesh.userData.baseZ ?? -3
+        const targetZ = baseZ + 15
+        
+        let pulseCount = 0
+        const pulseDuration = 300
+        const pulseAnimation = () => {
+          pulseCount++
+          const progress = (pulseCount * 16) / pulseDuration
+          if (progress < 1) {
+            const pulse = Math.sin(progress * Math.PI) * 3
+            mesh.position.z = targetZ + pulse
+            requestAnimationFrame(pulseAnimation)
+          } else {
+            mesh.position.z = targetZ
+          }
+        }
+        pulseAnimation()
+
         const mat = mesh.material as THREE.MeshStandardMaterial
         mat.color.set(0xf59e0b)
-        mesh.position.z = (mesh.userData.baseZ ?? -3) + 15
         const edge = mesh.getObjectByName('edge') as THREE.LineSegments
         if (edge) {
           const edgeMat = edge.material as THREE.LineBasicMaterial
@@ -1457,6 +1565,20 @@ const App = () => {
           placeLabel(mesh, name, centroid, true)
           setSelectedCounty(name)
           setStatus(`已选中：${name}`)
+          
+          // 移动相机到选中的县级位置
+          const cameraDistance = 60
+          const cameraHeight = 50
+          const cameraOffsetX = 20
+          
+          const targetLookAt = centroid.clone()
+          const targetPosition = new THREE.Vector3(
+            centroid.x + cameraOffsetX,
+            centroid.y - cameraDistance * 0.6,
+            centroid.z + cameraHeight
+          )
+          
+          animateCamera(targetPosition, targetLookAt, 800)
         }
         return
       }
@@ -1735,14 +1857,20 @@ const App = () => {
       // 根据是否为县级添加到不同的数组
       if (isCounty) {
         countyMeshes.push(mesh)
-        // 县级mesh始终加入可点击列表，县级视图中可交互，返回省级时会移除
-        clickables.push(mesh)
+        // 县级mesh只在市级视图时加入可点击列表
+        // 只有在市级视图（viewLevelRef.current === 'city'）时才添加到 clickables
+        if (viewLevelRef.current === 'city') {
+          clickables.push(mesh)
+        }
       } else {
         cityMeshes.push(mesh)
         // 判断是否为市级，只有市级在省级视图时可点击
         const name = props?.name as string | undefined
         if (isCityLevel(name)) {
-          clickables.push(mesh)
+          // 只有在省级视图（viewLevelRef.current === 'province'）时才添加到 clickables
+          if (viewLevelRef.current === 'province') {
+            clickables.push(mesh)
+          }
         }
       }
       
@@ -1765,6 +1893,13 @@ const App = () => {
       try {
         setError(null)
         setStatus('正在加载河北省地图…')
+        
+        // 确保视图级别为省级，这样只有市级 mesh 会被添加到 clickables
+        updateViewLevel('province')
+        
+        // 清空 clickables，准备添加市级 mesh
+        clickables.length = 0
+        
         const response = await fetch('/河北省.geojson')
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const data: FeatureCollection | Feature = await response.json()
@@ -1892,9 +2027,42 @@ const App = () => {
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
       raycaster.setFromCamera(pointer, camera)
-      const [hit] = raycaster.intersectObjects(clickables, false)
-      if (hit && hit.object instanceof THREE.Mesh) {
-        applyHighlight(hit.object)
+      
+      // 先检测标签 sprite（因为它们可能在 mesh 上方，会遮挡点击）
+      // 只检测当前视图级别下对应的标签
+      const allSprites: THREE.Sprite[] = []
+      labelSprites.forEach((sprite, mesh) => {
+        // 在省级视图下，只检测市级 mesh 的标签
+        // 在市级视图下，只检测县级 mesh 的标签
+        if (viewLevelRef.current === 'province') {
+          if (cityMeshes.includes(mesh) && isCityLevel(mesh.userData.name)) {
+            allSprites.push(sprite)
+          }
+        } else if (viewLevelRef.current === 'city') {
+          if (countyMeshes.includes(mesh)) {
+            allSprites.push(sprite)
+          }
+        }
+      })
+      
+      // 同时检测标签 sprite 和 mesh，优先处理距离更近的
+      const allClickables: THREE.Object3D[] = [...allSprites, ...clickables]
+      const hits = raycaster.intersectObjects(allClickables, false)
+      
+      if (hits.length > 0) {
+        const hit = hits[0]
+        if (hit.object instanceof THREE.Sprite) {
+          // 点击到标签，找到对应的 mesh
+          const hitSprite = hit.object as THREE.Sprite
+          const mesh = hitSprite.userData.mesh as THREE.Mesh | undefined
+          if (mesh && clickables.includes(mesh)) {
+            applyHighlight(mesh)
+            return
+          }
+        } else if (hit.object instanceof THREE.Mesh) {
+          // 直接点击到 mesh
+          applyHighlight(hit.object)
+        }
       }
     }
     renderer.domElement.addEventListener('pointerdown', handlePointer)
@@ -1928,6 +2096,22 @@ const App = () => {
         <div>
           <h1>河北省旅游景点</h1>
         </div>
+        <button 
+          className="fullscreen-btn"
+          onClick={toggleFullscreen}
+          aria-label={isFullscreen ? '退出全屏' : '进入全屏'}
+          title={isFullscreen ? '退出全屏' : '进入全屏'}
+        >
+          {isFullscreen ? (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+            </svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+            </svg>
+          )}
+        </button>
       </header>
 
       <div className="main-grid">

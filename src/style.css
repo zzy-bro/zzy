@@ -74,6 +74,96 @@ body {
   font-size: 11px;
 }
 
+.fullscreen-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(124, 240, 255, 0.4);
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(124, 240, 255, 0.15), rgba(46, 150, 255, 0.2));
+  color: #7cf0ff;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+  backdrop-filter: blur(4px);
+}
+
+.fullscreen-btn:hover {
+  background: linear-gradient(135deg, rgba(124, 240, 255, 0.3), rgba(46, 150, 255, 0.35));
+  border-color: rgba(124, 240, 255, 0.7);
+  box-shadow: 0 0 12px rgba(124, 240, 255, 0.4);
+  transform: scale(1.05);
+}
+
+.fullscreen-btn:active {
+  transform: scale(0.95);
+}
+
+.fullscreen-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+}
+
+/* 全屏模式下的样式优化 */
+:fullscreen .app,
+:-webkit-full-screen .app,
+:-moz-full-screen .app,
+:-ms-fullscreen .app {
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+}
+
+:fullscreen .header,
+:-webkit-full-screen .header,
+:-moz-full-screen .header,
+:-ms-fullscreen .header {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+
+/* 移动端全屏模式优化 */
+@media screen and (max-width: 1024px) {
+  :fullscreen .app,
+  :-webkit-full-screen .app,
+  :-moz-full-screen .app,
+  :-ms-fullscreen .app {
+    padding: 0;
+    gap: 0;
+  }
+
+  :fullscreen .header,
+  :-webkit-full-screen .header,
+  :-moz-full-screen .header,
+  :-ms-fullscreen .header {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(124, 240, 255, 0.35);
+  }
+
+  :fullscreen .main-grid,
+  :-webkit-full-screen .main-grid,
+  :-moz-full-screen .main-grid,
+  :-ms-fullscreen .main-grid {
+    min-height: calc(100vh - 60px);
+    gap: 0;
+  }
+
+  :fullscreen .panel,
+  :-webkit-full-screen .panel,
+  :-moz-full-screen .panel,
+  :-ms-fullscreen .panel {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+}
+
 .badge {
   padding: 4px 8px;
   border-radius: 999px;
@@ -997,6 +1087,20 @@ body {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
   }
+
+  /* 移动端全屏按钮优化 */
+  .fullscreen-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    touch-action: manipulation;
+  }
+
+  .fullscreen-btn svg {
+    width: 22px;
+    height: 22px;
+  }
 }
 
 /* 移动端横屏自适应 */
@@ -1017,6 +1121,16 @@ body {
 
   .header p {
     font-size: 12px;
+  }
+
+  .fullscreen-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .fullscreen-btn svg {
+    width: 20px;
+    height: 20px;
   }
 
   .badge {
@@ -1242,6 +1356,16 @@ body {
 
   .header h1 {
     font-size: 14px;
+  }
+
+  .fullscreen-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .fullscreen-btn svg {
+    width: 18px;
+    height: 18px;
   }
 
   .main-grid {

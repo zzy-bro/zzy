@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
@@ -376,7 +376,45 @@ const App = () => {
   const [attractionFilter, setAttractionFilter] = useState<'all' | '5A' | '4A' | '山脉' | '河流'>('all')
   const [isFullscreen, setIsFullscreen] = useState(false)
   
-  // 全屏功能
+  // 锁定屏幕方向为横屏
+  const lockOrientation = useCallback(async () => {
+    try {
+      // 使用 Screen Orientation API
+      if ('orientation' in screen && 'lock' in screen.orientation) {
+        await (screen.orientation as any).lock('landscape')
+      } else if ((screen as any).lockOrientation) {
+        // 旧版 API
+        await (screen as any).lockOrientation('landscape')
+      } else if ((screen as any).mozLockOrientation) {
+        // Firefox 旧版
+        await (screen as any).mozLockOrientation('landscape')
+      } else if ((screen as any).msLockOrientation) {
+        // IE/Edge 旧版
+        await (screen as any).msLockOrientation('landscape')
+      }
+    } catch (err) {
+      console.warn('锁定屏幕方向失败（可能不支持或需要用户手势）:', err)
+    }
+  }, [])
+
+  // 解锁屏幕方向
+  const unlockOrientation = useCallback(async () => {
+    try {
+      if ('orientation' in screen && 'unlock' in screen.orientation) {
+        await (screen.orientation as any).unlock()
+      } else if ((screen as any).unlockOrientation) {
+        await (screen as any).unlockOrientation()
+      } else if ((screen as any).mozUnlockOrientation) {
+        await (screen as any).mozUnlockOrientation()
+      } else if ((screen as any).msUnlockOrientation) {
+        await (screen as any).msUnlockOrientation()
+      }
+    } catch (err) {
+      console.warn('解锁屏幕方向失败:', err)
+    }
+  }, [])
+
+  // 全屏功能（横屏模式）
   const toggleFullscreen = async () => {
     try {
       const isCurrentlyFullscreen = !!(
@@ -401,7 +439,16 @@ const App = () => {
           // IE/Edge
           await (element as any).msRequestFullscreen()
         }
+        
+        // 进入全屏后锁定为横屏方向
+        // 延迟一下，确保全屏已经完成
+        setTimeout(() => {
+          lockOrientation()
+        }, 100)
       } else {
+        // 退出全屏前先解锁方向
+        await unlockOrientation()
+        
         // 退出全屏
         if (document.exitFullscreen) {
           await document.exitFullscreen()
@@ -420,7 +467,7 @@ const App = () => {
 
   // 监听全屏状态变化
   useEffect(() => {
-    const handleFullscreenChange = () => {
+    const handleFullscreenChange = async () => {
       const isFull = !!(
         document.fullscreenElement ||
         (document as any).webkitFullscreenElement ||
@@ -428,6 +475,16 @@ const App = () => {
         (document as any).msFullscreenElement
       )
       setIsFullscreen(isFull)
+      
+      // 进入全屏时锁定横屏，退出时解锁
+      if (isFull) {
+        // 延迟一下，确保全屏已经完成
+        setTimeout(() => {
+          lockOrientation()
+        }, 200)
+      } else {
+        await unlockOrientation()
+      }
     }
 
     document.addEventListener('fullscreenchange', handleFullscreenChange)
@@ -444,7 +501,7 @@ const App = () => {
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
       document.removeEventListener('msfullscreenchange', handleFullscreenChange)
     }
-  }, [])
+  }, [lockOrientation, unlockOrientation])
   
   // 同步 ref 和 state
   const updateViewLevel = (level: 'province' | 'city') => {
